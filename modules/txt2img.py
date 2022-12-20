@@ -35,6 +35,7 @@ def txt2img(prompt: str, negative_prompt: str, prompt_style: str, prompt_style2:
         denoising_strength=denoising_strength if enable_hr else None,
         firstphase_width=firstphase_width if enable_hr else None,
         firstphase_height=firstphase_height if enable_hr else None,
+        can_be_thumbnailed=True,
     )
 
     p.scripts = modules.scripts.scripts_txt2img

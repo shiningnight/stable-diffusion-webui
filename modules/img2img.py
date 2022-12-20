@@ -130,6 +130,9 @@ def img2img(mode: int, prompt: str, negative_prompt: str, prompt_style: str, pro
         inpaint_full_res=inpaint_full_res,
         inpaint_full_res_padding=inpaint_full_res_padding,
         inpainting_mask_invert=inpainting_mask_invert,
+        is_batch_img2img=is_batch,
+        is_inpaint=is_inpaint,
+        can_be_thumbnailed=not is_batch,
     )
 
     p.scripts = modules.scripts.scripts_txt2img

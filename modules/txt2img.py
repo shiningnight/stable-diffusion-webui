@@ -38,7 +38,6 @@ def txt2img(prompt: str, negative_prompt: str, prompt_style: str, prompt_style2:
         hr_second_pass_steps=hr_second_pass_steps,
         hr_resize_x=hr_resize_x,
         hr_resize_y=hr_resize_y,
-        can_be_thumbnailed=True,
     )
 
     p.scripts = modules.scripts.scripts_txt2img

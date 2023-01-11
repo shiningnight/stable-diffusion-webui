@@ -14,7 +14,7 @@ import modules.interrogate
 import modules.memmon
 import modules.styles
 import modules.devices as devices
-from modules import localization, sd_vae, extensions, script_loading, errors
+from modules import localization, sd_vae, extensions, script_loading, errors, ui_components
 from modules.paths import models_path, script_path, sd_path
 
 
@@ -33,6 +33,7 @@ parser.add_argument("--no-half-vae", action='store_true', help="do not switch th
 parser.add_argument("--no-progressbar-hiding", action='store_true', help="do not hide progressbar in gradio UI (we hide it because it slows down ML if you have hardware acceleration in browser)")
 parser.add_argument("--max-batch-count", type=int, default=16, help="maximum batch count value for the UI")
 parser.add_argument("--embeddings-dir", type=str, default=os.path.join(script_path, 'embeddings'), help="embeddings directory for textual inversion (default: embeddings)")
+parser.add_argument("--textual-inversion-templates-dir", type=str, default=os.path.join(script_path, 'textual_inversion_templates'), help="directory with textual inversion templates")
 parser.add_argument("--hypernetwork-dir", type=str, default=os.path.join(models_path, 'hypernetworks'), help="hypernetwork directory")
 parser.add_argument("--localizations-dir", type=str, default=os.path.join(script_path, 'localizations'), help="localizations directory")
 parser.add_argument("--allow-code", action='store_true', help="allow custom script execution from webui")
@@ -386,7 +387,7 @@ options_templates.update(options_section(('sd', "Stable Diffusion"), {
     "initial_noise_multiplier": OptionInfo(1.0, "Noise multiplier for img2img", gr.Slider, {"minimum": 0.5, "maximum": 1.5, "step": 0.01 }),
     "img2img_color_correction": OptionInfo(False, "Apply color correction to img2img results to match original colors."),
     "img2img_fix_steps": OptionInfo(False, "With img2img, do exactly the amount of steps the slider specifies (normally you'd do less with less denoising)."),
-    "img2img_background_color": OptionInfo("#ffffff", "With img2img, fill image's transparent parts with this color.", gr.ColorPicker, {}),
+    "img2img_background_color": OptionInfo("#ffffff", "With img2img, fill image's transparent parts with this color.", ui_components.FormColorPicker, {}),
     "enable_quantization": OptionInfo(False, "Enable quantization in K samplers for sharper and cleaner results. This may change existing seeds. Requires restart to apply."),
     "enable_emphasis": OptionInfo(True, "Emphasis: use (text) to make model pay more attention to text and [text] to make it pay less attention"),
     "enable_batch_seeds": OptionInfo(True, "Make K-diffusion samplers produce same images in a batch as when making a single image"),
@@ -398,6 +399,7 @@ options_templates.update(options_section(('sd', "Stable Diffusion"), {
 options_templates.update(options_section(('compatibility', "Compatibility"), {
     "use_old_emphasis_implementation": OptionInfo(False, "Use old emphasis implementation. Can be useful to reproduce old seeds."),
     "use_old_karras_scheduler_sigmas": OptionInfo(False, "Use old karras scheduler sigmas (0.1 to 10)."),
+    "use_old_hires_fix_width_height": OptionInfo(False, "For hires fix, use width/height sliders to set final resolution rather than first pass (disables Upscale by, Resize width/height to)."),
 }))
 
 options_templates.update(options_section(('interrogate', "Interrogate Options"), {
@@ -421,10 +423,6 @@ options_templates.update(options_section(('ui', "User interface"), {
     "show_progress_type": OptionInfo("Full", "Image creation progress preview mode", gr.Radio, {"choices": ["Full", "Approx NN", "Approx cheap"]}),
     "show_progress_grid": OptionInfo(True, "Show previews of all images generated in a batch as a grid"),
     "return_grid": OptionInfo(True, "Show grid in results for web"),
-    "show_result_images_as_thumbnail": OptionInfo(False, "Show all result image as thumbnail. Does not affect output images. Save bandwidth when using over bad Internet connection. Will break all \"Save\" and \"Send to ...\" functions (for now)."),
-    "result_images_thumbnail_size": OptionInfo(512, "Thumbnail max size", gr.Slider, {"minimum": 256, "maximum": 1024, "step": 64}),
-    "result_images_thumbnail_format": OptionInfo('jpg', "Thumbnail file format. JPG for further bandwidth saving"),
-    "result_images_thumbnail_temp_path": OptionInfo('outputs/thumbnails', "Thumbnail temp save path"),
     "do_not_show_images": OptionInfo(False, "Do not show any images in results for web"),
     "add_model_hash_to_info": OptionInfo(True, "Add model hash to generation information"),
     "add_model_name_to_info": OptionInfo(False, "Add model name to generation information"),

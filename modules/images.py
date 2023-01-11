@@ -655,3 +655,19 @@ def flatten(img, bgcolor):
         img = background
 
     return img.convert('RGB')
+
+
+def make_thumbnail(image: Image.Image, max_size, temp_path, extension="jpg"):
+    if image.size[0] > max_size or image.size[1] > max_size:
+        ratio = 512 / max(image.size)
+        if image.size[0] > image.size[1]:
+            w = max_size
+            h = int(image.size[1] * ratio)
+        else:
+            w = int(image.size[0] * ratio)
+            h = max_size
+        thumb = image.resize((w,h), Image.ANTIALIAS)
+    else:
+        thumb = image.copy()
+    save_image(thumb, temp_path, "thumb", extension=extension)
+    return thumb

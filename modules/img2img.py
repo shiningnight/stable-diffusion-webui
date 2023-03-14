@@ -73,6 +73,8 @@ def process_batch(p, input_dir, output_dir, inpaint_mask_dir, args):
 
             if not save_normally:
                 os.makedirs(output_dir, exist_ok=True)
+                if processed_image.mode == 'RGBA':
+                    processed_image = processed_image.convert("RGB")
                 processed_image.save(os.path.join(output_dir, filename))
 
 
@@ -82,6 +84,7 @@ def img2img(id_task: str, mode: int, prompt: str, negative_prompt: str, prompt_s
     is_batch = mode == 5
     is_inpaint = 2 <= mode <= 4
     
+
     if mode == 0:  # img2img
         image = init_img.convert("RGB")
         mask = None

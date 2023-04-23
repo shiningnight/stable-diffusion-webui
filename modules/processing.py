@@ -78,21 +78,27 @@ def apply_overlay(image, paste_loc, index, overlays):
 
 
 def txt2img_image_conditioning(sd_model, x, width, height):
-    if sd_model.model.conditioning_key not in {'hybrid', 'concat'}:
-        # Dummy zero conditioning if we're not using inpainting model.
+    if sd_model.model.conditioning_key in {'hybrid', 'concat'}: # Inpainting models
+
+        # The "masked-image" in this case will just be all zeros since the entire image is masked.
+        image_conditioning = torch.zeros(x.shape[0], 3, height, width, device=x.device)
+        image_conditioning = sd_model.get_first_stage_encoding(sd_model.encode_first_stage(image_conditioning))
+
+        # Add the fake full 1s mask to the first dimension.
+        image_conditioning = torch.nn.functional.pad(image_conditioning, (0, 0, 0, 0, 1, 0), value=1.0)
+        image_conditioning = image_conditioning.to(x.dtype)
+
+        return image_conditioning
+
+    elif sd_model.model.conditioning_key == "crossattn-adm": # UnCLIP models
+
+        return x.new_zeros(x.shape[0], 2*sd_model.noise_augmentor.time_embed.dim, dtype=x.dtype, device=x.device)
+
+    else:
+        # Dummy zero conditioning if we're not using inpainting or unclip models.
         # Still takes up a bit of memory, but no encoder call.
         # Pretty sure we can just make this a 1x1 image since its not going to be used besides its batch size.
         return x.new_zeros(x.shape[0], 5, 1, 1, dtype=x.dtype, device=x.device)
-
-    # The "masked-image" in this case will just be all zeros since the entire image is masked.
-    image_conditioning = torch.zeros(x.shape[0], 3, height, width, device=x.device)
-    image_conditioning = sd_model.get_first_stage_encoding(sd_model.encode_first_stage(image_conditioning))
-
-    # Add the fake full 1s mask to the first dimension.
-    image_conditioning = torch.nn.functional.pad(image_conditioning, (0, 0, 0, 0, 1, 0), value=1.0)
-    image_conditioning = image_conditioning.to(x.dtype)
-
-    return image_conditioning
 
 
 class StableDiffusionProcessing:
@@ -100,6 +106,7 @@ class StableDiffusionProcessing:
     The first set of paramaters: sd_models -> do_not_reload_embeddings represent the minimum required to create a StableDiffusionProcessing
     """
     def __init__(self, sd_model=None, outpath_samples=None, outpath_grids=None, prompt: str = "", styles: List[str] = None, seed: int = -1, subseed: int = -1, subseed_strength: float = 0, seed_resize_from_h: int = -1, seed_resize_from_w: int = -1, seed_enable_extras: bool = True, sampler_name: str = None, batch_size: int = 1, n_iter: int = 1, steps: int = 50, cfg_scale: float = 7.0, width: int = 512, height: int = 512, restore_faces: bool = False, tiling: bool = False, do_not_save_samples: bool = False, do_not_save_grid: bool = False, extra_generation_params: Dict[Any, Any] = None, overlay_images: Any = None, negative_prompt: str = None, eta: float = None, do_not_reload_embeddings: bool = False, denoising_strength: float = 0, ddim_discretize: str = None, s_churn: float = 0.0, s_tmax: float = None, s_tmin: float = 0.0, s_noise: float = 1.0, override_settings: Dict[str, Any] = None, override_settings_restore_afterwards: bool = True, sampler_index: int = None, script_args: list = None, is_batch_img2img: bool = False, is_inpaint: bool = False, can_be_thumbnailed: bool = True):
+
         if sampler_index is not None:
             print("sampler_index argument for StableDiffusionProcessing does not do anything; use sampler_name", file=sys.stderr)
 
@@ -193,6 +200,14 @@ class StableDiffusionProcessing:
 
         return conditioning_image
 
+    def unclip_image_conditioning(self, source_image):
+        c_adm = self.sd_model.embedder(source_image)
+        if self.sd_model.noise_augmentor is not None:
+            noise_level = 0 # TODO: Allow other noise levels?
+            c_adm, noise_level_emb = self.sd_model.noise_augmentor(c_adm, noise_level=repeat(torch.tensor([noise_level]).to(c_adm.device), '1 -> b', b=c_adm.shape[0]))
+            c_adm = torch.cat((c_adm, noise_level_emb), 1)
+        return c_adm
+
     def inpainting_image_conditioning(self, source_image, latent_image, image_mask=None):
         self.is_using_inpainting_conditioning = True
 
@@ -243,6 +258,9 @@ class StableDiffusionProcessing:
 
         if self.sampler.conditioning_key in {'hybrid', 'concat'}:
             return self.inpainting_image_conditioning(source_image, latent_image, image_mask=image_mask)
+
+        if self.sampler.conditioning_key == "crossattn-adm":
+            return self.unclip_image_conditioning(source_image)
 
         # Dummy zero conditioning if we're not using inpainting or depth model.
         return latent_image.new_zeros(latent_image.shape[0], 5, 1, 1)
@@ -498,6 +516,7 @@ def process_images(p: StableDiffusionProcessing) -> Processed:
 
                 if k == 'sd_vae':
                     sd_vae.reload_vae_weights()
+    
     if opts.show_result_images_as_thumbnail and p.can_be_thumbnailed:
         res.images = [images.make_thumbnail(img, opts.result_images_thumbnail_size, opts.result_images_thumbnail_temp_path, extension=opts.result_images_thumbnail_format) for img in res.images]
 
@@ -693,6 +712,22 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
                 if opts.enable_pnginfo:
                     image.info["parameters"] = text
                 output_images.append(image)
+
+                if hasattr(p, 'mask_for_overlay') and p.mask_for_overlay:
+                    image_mask = p.mask_for_overlay.convert('RGB')
+                    image_mask_composite = Image.composite(image.convert('RGBA').convert('RGBa'), Image.new('RGBa', image.size), p.mask_for_overlay.convert('L')).convert('RGBA')
+
+                    if opts.save_mask:
+                        images.save_image(image_mask, p.outpath_samples, "", seeds[i], prompts[i], opts.samples_format, info=infotext(n, i), p=p, suffix="-mask")
+
+                    if opts.save_mask_composite:
+                        images.save_image(image_mask_composite, p.outpath_samples, "", seeds[i], prompts[i], opts.samples_format, info=infotext(n, i), p=p, suffix="-mask-composite")
+
+                    if opts.return_mask:
+                        output_images.append(image_mask)
+                    
+                    if opts.return_mask_composite:
+                        output_images.append(image_mask_composite)
 
             del x_samples_ddim
 
